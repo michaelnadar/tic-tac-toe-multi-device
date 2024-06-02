@@ -28,6 +28,6 @@ io.on('connection', (socket) => {
 });
 // 172.20.10.2
 // 192.168.1.104
-server.listen(3000, '172.20.10.2', () => {
+server.listen(3000, '192.168.1.104', () => {
     console.log('listening on *:3000');
 });

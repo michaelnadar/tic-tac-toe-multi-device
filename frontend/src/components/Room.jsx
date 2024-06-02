@@ -37,7 +37,7 @@ const handleDraw = (matrix)=>{
   return  matrix.some(row => row.some(cell => cell === "-"));
 }
 
-function Room({name}) {
+function Room({name,localAudioTrack,localVideoTrack}) {
   const colors = [
     "#FF5733", // Vibrant Orange
     "#FFBD33", // Bright Yellow
@@ -77,7 +77,12 @@ function Room({name}) {
   const [remoteMousePosition, setRemoteMousePosition] = useState({ x: 0, y: 0 });
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [remoteWidth,setRemoteWidth] =useState(null);
- 
+  const pcRef = useRef(new RTCPeerConnection());
+  const [videoTrack, setVideoTrack] = useState(null);
+  const remoteVideoRef = useRef(new MediaStream());
+  const localVideoRef = useRef(null);
+
+
   useEffect(() => {
     const handleResize = () => {
       setWindowWidth(window.innerWidth);
@@ -142,21 +147,7 @@ function Room({name}) {
     setWinner(false);
     setDraw(false);
   });
-  // socket?.on('disconnect',()=>{
-  //   console.log(data,'partner disconnected');
-  //   setResetSocket(true);
-  //   setLoading(true);
-  //   setResetData(true);
-  //   setchatArr([]);
-  //   setChat('');
-  //   setMatrix(number);
-  //   setCount(0);
-  //   setDisable(false);
-  //   setPreVal("X");
-  //   setWinVal("");
-  //   setWinner(false);
-  //   setDraw(false);
-  // })
+
 
   socket?.on('receive',(data)=>{
     //debugger;
@@ -281,16 +272,88 @@ function Room({name}) {
      setWinner(false);
      setDraw(false);
    }
+  };
+  pcRef.current.oniceconnectionstatechange= e=>{
+    console.log(pcRef.current.iceConnectionState);
   }
+  pcRef.current.ontrack = e =>{
+    console.log(e,'ontrack');
+    const {type,track} = e;
+    if(track.kind === 'video'){
+      console.log(track,'video');
+      remoteVideoRef.current.srcObject.addTrack(track)
+    }else{
+      remoteVideoRef.current.srcObject.addTrack(track)
+    }
+    remoteVideoRef.current.play();
+  }
+ 
+  socket?.on('answer', async ({sdp})=>{
+    console.log('answer called');
+    if(sdp){
+      if(remoteVideoRef && remoteVideoRef.current){
+        remoteVideoRef.current.srcObject = new MediaStream();
+      }
+      const pc = pcRef.current;
+      
+      if (!pc.remoteDescription) {
+      pc.setRemoteDescription(sdp)};
+      const answer = await pc.createAnswer();
+      
+      pc.setLocalDescription(answer);
+     // console.log(answer);
+      if(localAudioTrack){
+        pc.addTrack(localAudioTrack);
+      }
+      if(localVideoTrack){
+        pc.addTrack(localVideoTrack);
+      }
+      pc.onicecandidate = e=>{
+        console.log(room,'room')
+        if(!e.candidate){
+          return;
+        }
+        if (e.candidate) {
+          socket.emit("add-ice-candidate", {
+            candidate: e.candidate,
+            room
+          })
+        }
+      }
+      console.log(room,'room');
+  socket.emit('answer-client',{room,answer});
+     
+    }
+});
+ 
+ socket?.on('client-answer',({answer})=>{
+  console.log('client-answer');
+  console.log(answer);
+  
+    if(!pcRef.current.remoteDescription){
+      pcRef.current.setRemoteDescription(answer);
+    // setSendingPc(pc=>{
+    //   pc?.setRemoteDescription(answer);
+    //   return pc;
+    // }
+    // )
+  
+  }
+  
+ });
+
+
   // 192.168.1.104
   //172.20.10.2
   useEffect(()=>{
-      var socket = io('http://172.20.10.2:3000');
+      var socket = io('http://192.168.1.104:3000');
       setSocket(socket);
+      
       socket.on('connect', () => {
         console.log('connected to server');
      
     });
+   
     const fetchLocation = async () => {
       try {
         const response = await axios.get(`http://ip-api.com/json`);
@@ -304,20 +367,68 @@ function Room({name}) {
       }
     };
     fetchLocation();
+    if(remoteVideoRef && remoteVideoRef.current){
+      console.log(remoteVideoRef,'inside remoteVideoRef');
+      remoteVideoRef.current.srcObject = new MediaStream();
+    }
     
+   
+   socket?.on('ice-candicate',({candidate})=>{
+    if(candidate){
+      pcRef.current.addIceCandidate(candidate);
+  }
+   })
+  
+  
       
-      socket.on('room',({room,name,city})=>{
+      socket.on('room',async ({room,name,city,type})=>{
         console.log(name,city);
-       
         setStrangerName(name);
         setStrangerCity(city);
         setRoom(room);
         setLoading(false);
-      });
-      
+       if(type === "offer"){
+         const pc = pcRef.current;
+         console.log('offer called');
+        //setSendingPc(pc);
+        if(localAudioTrack){
+          pc.addTrack(localAudioTrack);
+        }
+        if(localVideoTrack){
+          pc.addTrack(localVideoTrack);
+        }
+        console.log('before negogiation');
+        pc.onnegotiationneeded = async ()=>{
+        console.log('inside negogiation');
+            const sdp = await pc.createOffer();
+            console.log(sdp);
+            pc.setLocalDescription(sdp);
+            socket.emit('offer',{sdp,room});
+        }
+        pc.onicecandidate = e=>{
+          if(!e.candidate){
+            console.log('no candicate')
+            return;
+          }
+          if (e.candidate) {
+            console.log(e.candidate)
+            socket.emit("add-ice-candidate", {
+             candidate: e.candidate,
+             room
+            })
+         }
+        }
+        pcRef.current.ontrack = e =>{
+          console.log(e,'ontrack')
+        }
+      }
       if (inputRef.current) {
         inputRef.current.focus();
       }
+    });
+
+   
+
     return () => {
       
       socket.disconnect();
@@ -352,6 +463,23 @@ function Room({name}) {
   
 };
 
+
+
+
+useEffect(() => {
+  console.log(localVideoRef)
+  console.log(localVideoRef.current);
+  
+  if (localVideoRef && localVideoRef.current) {
+      if (localVideoTrack) {    
+        console.log(localVideoTrack,'local')
+          localVideoRef.current.srcObject = new MediaStream([localVideoTrack]);
+          localVideoRef.current.play();
+      }
+  }
+}, [localVideoRef,loading]);
+
+
 const handleMouseDown = (event) => {
   setClickPosition({ x: event.clientX, y: event.clientY });
   console.log(clickPosition);
@@ -370,7 +498,7 @@ const handleMouseDown = (event) => {
       {strangerName}
 </RemoteCursor>
         }
-    {loading ? <div style={{color:'green'}}>'Looking for Partner.........'
+    {false ? <div style={{color:'green'}}>'Looking for Partner.........'
     {resetData && <div style={{color:'red'}}> partner got disconnect!!!! Again Looking for partner</div>}
     </div>:
     ( <>
@@ -383,6 +511,7 @@ const handleMouseDown = (event) => {
        onMouseMove={handleMouseMove}
        onMouseDown={handleMouseDown}
       >
+        <video autoPlay width={remoteWidth} height={400} ref={localVideoRef}/>
         
       
       <div style={{color:'red'}}>Stranger's Name:{strangerName}</div>
@@ -413,6 +542,8 @@ const handleMouseDown = (event) => {
      <Tic 
      disabled={true}
      >
+        {/* <video autoPlay width={400} height={400} ref={remoteVideoRef} /> */}
+        <video autoPlay width={remoteWidth} height={400} ref={remoteVideoRef} />
     <div >
       
       <div style={{color:'red'}}>Stranger's Name:{myName}</div>
@@ -559,3 +690,19 @@ const Scroll = styled.div`
   }
 
 `
+
+  // socket?.on('disconnect',()=>{
+  //   console.log(data,'partner disconnected');
+  //   setResetSocket(true);
+  //   setLoading(true);
+  //   setResetData(true);
+  //   setchatArr([]);
+  //   setChat('');
+  //   setMatrix(number);
+  //   setCount(0);
+  //   setDisable(false);
+  //   setPreVal("X");
+  //   setWinVal("");
+  //   setWinner(false);
+  //   setDraw(false);
+  // })

@@ -90,6 +90,7 @@ interface Room{
                 room:roomId,
                 name:user2.name,
                 city:user2.city,
+                type:'offer'
             }
             )
             user2.socket.emit('room',
@@ -97,6 +98,7 @@ interface Room{
                 room:roomId,
                 name:user1.name,
                 city:user1.city,
+                type:'answer'
             }
             )
             
@@ -130,7 +132,69 @@ interface Room{
                 const rooom = this.room.get(roomId);
                 const user = rooom?.user1.socket.id === socket.id ? rooom.user2 :rooom?.user1;
                 user?.socket.emit('mouse_point_receive',{x,y});
+            });
+            socket.on('offer',({sdp,room})=>{
+                const roomId = room?.toString();
+                const rooom = this.room.get(roomId);
+                const user = rooom?.user1.socket.id === socket.id ? rooom.user2 :rooom?.user1;
+                user?.socket.emit('answer',{sdp});
+            });
+            socket.on('answer-client',({room,answer})=>{
+                // client-answer
+                console.log(room,answer);
+                const roomId = room?.toString();
+                const rooom = this.room.get(roomId);
+                const user = rooom?.user1.socket.id === socket.id ? rooom.user2 :rooom?.user1;
+                user?.socket.emit('client-answer',{answer});
             })
+            socket.on("add-ice-candidate", ({candidate, room}) => {
+                const roomId = room?.toString();
+                const rooom = this.room.get(roomId);
+                const user = rooom?.user1.socket.id === socket.id ? rooom.user2 :rooom?.user1;
+                user?.socket.emit('ice-candicate',{candidate});
+               // this.onIceCandidates(roomId, socket.id, candidate, type);
+            });
+            // socket.on("offer", ({sdp, roomId}: {sdp: string, roomId: string}) => {
+            //     this.onOffer(roomId, sdp, socket.id);
+            // })
+    
+            // socket.on("answer",({sdp, roomId}: {sdp: string, roomId: string}) => {
+            //     this.onAnswer(roomId, sdp, socket.id);
+            // })
+    
+    }
+    onOffer(roomId: string, sdp: string, senderSocketid: string) {
+        const room = this.room.get(roomId);
+        if (!room) {
+            return;
+        }
+        const receivingUser = room.user1.socket.id === senderSocketid ? room.user2: room.user1;
+        receivingUser?.socket.emit("offer", {
+            sdp,
+            roomId
+        })
+    }
+    
+    onAnswer(roomId: string, sdp: string, senderSocketid: string) {
+        const room = this.room.get(roomId);
+        if (!room) {
+            return;
+        }
+        const receivingUser = room.user1.socket.id === senderSocketid ? room.user2: room.user1;
+
+        receivingUser?.socket.emit("answer", {
+            sdp,
+            roomId
+        });
+    }
+
+    onIceCandidates(roomId: string, senderSocketid: string, candidate: any, type: "sender" | "receiver") {
+        const room = this.room.get(roomId);
+        if (!room) {
+            return;
+        }
+        const receivingUser = room.user1.socket.id === senderSocketid ? room.user2: room.user1;
+        receivingUser.socket.emit("add-ice-candidate", ({candidate, type}));
     }
 
     generate(){

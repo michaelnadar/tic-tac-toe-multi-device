@@ -63,11 +63,13 @@ class Users {
             room: roomId,
             name: user2.name,
             city: user2.city,
+            type: 'offer'
         });
         user2.socket.emit('room', {
             room: roomId,
             name: user1.name,
             city: user1.city,
+            type: 'answer'
         });
     }
     handleQuery(socket) {
@@ -99,6 +101,63 @@ class Users {
             const user = (rooom === null || rooom === void 0 ? void 0 : rooom.user1.socket.id) === socket.id ? rooom.user2 : rooom === null || rooom === void 0 ? void 0 : rooom.user1;
             user === null || user === void 0 ? void 0 : user.socket.emit('mouse_point_receive', { x, y });
         });
+        socket.on('offer', ({ sdp, room }) => {
+            const roomId = room === null || room === void 0 ? void 0 : room.toString();
+            const rooom = this.room.get(roomId);
+            const user = (rooom === null || rooom === void 0 ? void 0 : rooom.user1.socket.id) === socket.id ? rooom.user2 : rooom === null || rooom === void 0 ? void 0 : rooom.user1;
+            user === null || user === void 0 ? void 0 : user.socket.emit('answer', { sdp });
+        });
+        socket.on('answer-client', ({ room, answer }) => {
+            // client-answer
+            console.log(room, answer);
+            const roomId = room === null || room === void 0 ? void 0 : room.toString();
+            const rooom = this.room.get(roomId);
+            const user = (rooom === null || rooom === void 0 ? void 0 : rooom.user1.socket.id) === socket.id ? rooom.user2 : rooom === null || rooom === void 0 ? void 0 : rooom.user1;
+            user === null || user === void 0 ? void 0 : user.socket.emit('client-answer', { answer });
+        });
+        socket.on("add-ice-candidate", ({ candidate, room }) => {
+            const roomId = room === null || room === void 0 ? void 0 : room.toString();
+            const rooom = this.room.get(roomId);
+            const user = (rooom === null || rooom === void 0 ? void 0 : rooom.user1.socket.id) === socket.id ? rooom.user2 : rooom === null || rooom === void 0 ? void 0 : rooom.user1;
+            user === null || user === void 0 ? void 0 : user.socket.emit('ice-candicate', { candidate });
+            // this.onIceCandidates(roomId, socket.id, candidate, type);
+        });
+        // socket.on("offer", ({sdp, roomId}: {sdp: string, roomId: string}) => {
+        //     this.onOffer(roomId, sdp, socket.id);
+        // })
+        // socket.on("answer",({sdp, roomId}: {sdp: string, roomId: string}) => {
+        //     this.onAnswer(roomId, sdp, socket.id);
+        // })
+    }
+    onOffer(roomId, sdp, senderSocketid) {
+        const room = this.room.get(roomId);
+        if (!room) {
+            return;
+        }
+        const receivingUser = room.user1.socket.id === senderSocketid ? room.user2 : room.user1;
+        receivingUser === null || receivingUser === void 0 ? void 0 : receivingUser.socket.emit("offer", {
+            sdp,
+            roomId
+        });
+    }
+    onAnswer(roomId, sdp, senderSocketid) {
+        const room = this.room.get(roomId);
+        if (!room) {
+            return;
+        }
+        const receivingUser = room.user1.socket.id === senderSocketid ? room.user2 : room.user1;
+        receivingUser === null || receivingUser === void 0 ? void 0 : receivingUser.socket.emit("answer", {
+            sdp,
+            roomId
+        });
+    }
+    onIceCandidates(roomId, senderSocketid, candidate, type) {
+        const room = this.room.get(roomId);
+        if (!room) {
+            return;
+        }
+        const receivingUser = room.user1.socket.id === senderSocketid ? room.user2 : room.user1;
+        receivingUser.socket.emit("add-ice-candidate", ({ candidate, type }));
     }
     generate() {
         return GLOBAL_ROOM_ID++;
